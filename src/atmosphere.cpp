@@ -2,17 +2,20 @@
 #include <QDir>
 #include <QStandardPaths>
 #include <QtQuick>
+#include <cutiestore.h>
 
 AtmosphereModel::AtmosphereModel(QObject *parent) : QObject(parent)
 {
-    atmosphereStore.setAppName("qml-module-cutie");
-    atmosphereStore.setStoreName("atmosphere");
-    connect(&atmosphereStore, SIGNAL(dataChanged(QVariantMap)), this, SLOT(onAtmosphereDataChanged(QVariantMap)));
-    onAtmosphereDataChanged(atmosphereStore.data());
+    m_atmosphereStore = new CutieStore();
+    m_atmosphereStore->setAppName("qml-module-cutie");
+    m_atmosphereStore->setStoreName("atmosphere");
+    connect(m_atmosphereStore, SIGNAL(dataChanged(QVariantMap)), this, SLOT(onAtmosphereDataChanged(QVariantMap)));
+    onAtmosphereDataChanged(m_atmosphereStore->data());
 }
 
 AtmosphereModel::~AtmosphereModel()
 {
+    delete m_atmosphereStore;
 }
 
 QString AtmosphereModel::path() {
@@ -20,9 +23,9 @@ QString AtmosphereModel::path() {
 }
 
 void AtmosphereModel::setPath(QString path) {
-    QVariantMap storeData = atmosphereStore.data();
+    QVariantMap storeData = m_atmosphereStore->data();
     storeData["path"] = QVariant(path);
-    atmosphereStore.setData(storeData);
+    m_atmosphereStore->setData(storeData);
     onAtmosphereDataChanged(storeData);
 }
 

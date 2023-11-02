@@ -2,9 +2,10 @@
 #include <QDebug>
 #include <QtQml/qqml.h>
 #include <QtQml/QQmlExtensionPlugin>
-#include <cutiestore.h>
 
 #define DEFAULT_ATMOSPHERE_PATH "file://usr/share/atmospheres/city/"
+
+class CutieStore;
 
 class AtmosphereModel : public QObject
 {
@@ -21,7 +22,7 @@ class AtmosphereModel : public QObject
 
     Q_PROPERTY(QVariantList atmosphereList READ atmosphereList NOTIFY atmosphereListChanged);
 
-    CutieStore atmosphereStore;
+    CutieStore *m_atmosphereStore;
 
     QString p_path;
     QString p_variant;
