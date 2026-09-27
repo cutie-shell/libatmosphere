@@ -1,8 +1,28 @@
 #include "atmosphere.h"
+#include "paletteextractor.h"
 #include <QDir>
+#include <QFileInfo>
+#include <QImage>
+#include <QSettings>
 #include <QStandardPaths>
 #include <QtQuick>
 #include <cutiestore.h>
+
+namespace {
+
+QString verifyPath(const QString &name)
+{
+	QString base = QDir::cleanPath(
+		QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) +
+		"/atmospheres");
+	QString path = QDir::cleanPath(base + '/' + name);
+	if (name == "Current" || name.contains('/') ||
+	    name.contains(QChar::Null) || !path.startsWith(base + '/'))
+		return QString();
+	return path;
+}
+
+} // namespace
 
 AtmosphereModel::AtmosphereModel(QObject *parent)
 	: QObject(parent)
@@ -73,6 +93,58 @@ QVariantList AtmosphereModel::atmosphereList()
 	return p_atmosphereList;
 }
 
+QVariantMap AtmosphereModel::extractPalette(QUrl wallpaperUrl)
+{
+	return PaletteExtractor::extract(wallpaperUrl);
+}
+
+bool AtmosphereModel::saveAtmosphere(QString name, QUrl wallpaperUrl,
+				      QVariantMap colors)
+{
+	QString dir = verifyPath(name);
+	QImage wallpaper(wallpaperUrl.toLocalFile());
+	if (dir.isEmpty() || wallpaper.isNull() || QFileInfo::exists(dir) ||
+	    !QDir().mkpath(dir)) {
+		qWarning() << "AtmosphereModel: cannot create atmosphere" << name;
+		return false;
+	}
+	if (!wallpaper.save(dir + "/wallpaper.jpg", "JPG")) {
+		qWarning() << "AtmosphereModel: failed to save wallpaper for" << name;
+		QDir(dir).removeRecursively();
+		return false;
+	}
+
+	QSettings settings(dir + "/settings.ini", QSettings::IniFormat);
+	for (const QString &key : QStringList{
+		     "variant", "primaryColor", "primaryAlphaColor",
+		     "secondaryColor", "secondaryAlphaColor", "accentColor",
+		     "textColor"})
+		settings.setValue(key, colors.value(key).toString().remove('#'));
+	settings.setValue("editable", true);
+	settings.sync();
+
+	onAtmosphereDataChanged(m_atmosphereStore->data());
+	return true;
+}
+
+bool AtmosphereModel::deleteAtmosphere(QString name)
+{
+	QString dir = verifyPath(name);
+	bool safeToDelete = !dir.isEmpty() && !QFileInfo(dir).isSymLink() &&
+		  QSettings(dir + "/settings.ini", QSettings::IniFormat)
+			  .value("editable", false).toBool();
+	if (!safeToDelete || !QDir(dir).removeRecursively()) {
+		qWarning() << "AtmosphereModel: cannot delete atmosphere" << name;
+		return false;
+	}
+
+	if (QDir::cleanPath(p_path) == dir)
+		setPath(QString(DEFAULT_ATMOSPHERE_PATH));
+	else
+		onAtmosphereDataChanged(m_atmosphereStore->data());
+	return true;
+}
+
 QUrl AtmosphereModel::themeSound(QString name)
 {
 	QString theme = qEnvironmentVariable("CUTIE_SOUND_THEME", "cutie");
@@ -130,6 +202,10 @@ void AtmosphereModel::onAtmosphereDataChanged(QVariantMap data)
 					myMap.insert("variant",
 						     settings.value("variant")
 							     .toString());
+					myMap.insert("editable",
+						     settings.value("editable",
+								    false)
+							     .toBool());
 					myList << myMap;
 				}
 			}
@@ -153,7 +229,7 @@ void AtmosphereModel::onAtmosphereDataChanged(QVariantMap data)
 	accentColorChanged();
 	p_textColor = "#" + settings.value("textColor").toString();
 	textColorChanged();
-	p_variant = "#" + settings.value("variant").toString();
+	p_variant = settings.value("variant").toString();
 	variantChanged();
 }
 
