@@ -6,6 +6,7 @@ Build-Depends: pkg-kde-tools,
                cmake,
                qt6-base-dev,
                qt6-declarative-dev,
+               libqt6dbus6-dev,
                libcutiestore-dev,
                pkg-config,
 Standards-Version: 4.5.1

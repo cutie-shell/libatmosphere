@@ -3,7 +3,7 @@ project(atmosphere VERSION 0.1 LANGUAGES CXX)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Quick)
+find_package(Qt6 REQUIRED COMPONENTS Core Quick DBus)
 find_package(PkgConfig)
 pkg_check_modules(CUTIESTORE cutiestore REQUIRED IMPORTED_TARGET)
 
@@ -24,6 +24,7 @@ set_target_properties(atmosphere PROPERTIES PUBLIC_HEADER src/atmosphere.h)
 target_link_libraries(atmosphere PUBLIC
     Qt::Core
     Qt::Quick
+    Qt::DBus
     PkgConfig::CUTIESTORE
 )
 

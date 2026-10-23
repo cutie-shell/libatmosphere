@@ -1,10 +1,14 @@
 #include "atmosphere.h"
 #include "paletteextractor.h"
+#include <QColor>
 #include <QDir>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QImage>
+#include <QPalette>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QtDBus>
 #include <QtQuick>
 #include <cutiestore.h>
 
@@ -20,6 +24,59 @@ QString verifyPath(const QString &name)
 	    name.contains(QChar::Null) || !path.startsWith(base + '/'))
 		return QString();
 	return path;
+}
+
+QVariant portalAppearanceSetting(const QString &key)
+{
+	QDBusMessage call = QDBusMessage::createMethodCall(
+		"org.freedesktop.portal.Desktop",
+		"/org/freedesktop/portal/desktop",
+		"org.freedesktop.portal.Settings", "Read");
+	call << "org.freedesktop.appearance" << key;
+	QDBusMessage reply =
+		QDBusConnection::sessionBus().call(call, QDBus::Block, 1000);
+	if (reply.type() != QDBusMessage::ReplyMessage ||
+	    reply.arguments().isEmpty())
+		return {};
+
+	QVariant value = reply.arguments().first();
+	while (value.metaType() == QMetaType::fromType<QDBusVariant>())
+		value = value.value<QDBusVariant>().variant();
+	return value;
+}
+
+bool isKdeOrGnome()
+{
+	const QStringList desktops =
+		qEnvironmentVariable("XDG_CURRENT_DESKTOP")
+			.split(':', Qt::SkipEmptyParts);
+	const bool detectedKdeOrGnome = desktops.contains("KDE", Qt::CaseInsensitive) ||
+	      	  						desktops.contains("GNOME", Qt::CaseInsensitive);
+	if (detectedKdeOrGnome)
+		qDebug() << "libatmosphere: non-cutie shell detected";
+	
+	return detectedKdeOrGnome;
+}
+
+QColor portalAccentColor()
+{
+	const QVariant accent = portalAppearanceSetting("accent-color");
+	if (accent.metaType() != QMetaType::fromType<QDBusArgument>())
+		return {};
+
+	const QDBusArgument rgb = accent.value<QDBusArgument>();
+	if (rgb.currentType() != QDBusArgument::StructureType)
+		return {};
+
+	double red = -1, green = -1, blue = -1;
+	rgb.beginStructure();
+	rgb >> red >> green >> blue;
+	rgb.endStructure();
+	if (red < 0 || red > 1 || green < 0 || green > 1 || blue < 0 ||
+	    blue > 1)
+		return {};
+
+	return QColor::fromRgbF(red, green, blue);
 }
 
 } // namespace
@@ -177,6 +234,7 @@ void AtmosphereModel::onAtmosphereDataChanged(QVariantMap data)
 		p_path = QString(DEFAULT_ATMOSPHERE_PATH);
 	if (old_path != p_path)
 		pathChanged();
+	const bool useSystemAppearance = isKdeOrGnome();
 
 	QStringList dirs = QStandardPaths::standardLocations(
 		QStandardPaths::GenericDataLocation);
@@ -216,20 +274,54 @@ void AtmosphereModel::onAtmosphereDataChanged(QVariantMap data)
 
 	QSettings settings(p_path + "/settings.ini", QSettings::IniFormat);
 	p_primaryColor = "#" + settings.value("primaryColor").toString();
-	primaryColorChanged();
 	p_primaryAlphaColor =
 		"#" + settings.value("primaryAlphaColor").toString();
-	primaryAlphaColorChanged();
 	p_secondaryColor = "#" + settings.value("secondaryColor").toString();
-	secondaryColorChanged();
 	p_secondaryAlphaColor =
 		"#" + settings.value("secondaryAlphaColor").toString();
-	secondaryAlphaColorChanged();
 	p_accentColor = "#" + settings.value("accentColor").toString();
-	accentColorChanged();
 	p_textColor = "#" + settings.value("textColor").toString();
-	textColorChanged();
 	p_variant = settings.value("variant").toString();
+	if (useSystemAppearance) {
+		const QColor accent = portalAccentColor();
+		qDebug() << "libatmosphere: portal accent" << accent;
+		if (accent.isValid()) {
+			const QPalette pal = QGuiApplication::palette();
+			// Primary is the accent itself. Secondary keeps its hue but
+			// has less saturation and more lightness, so it reads as a
+			// softer, clearly different shade. Alpha variants are derived
+			// from these two.
+			const QColor primary = accent;
+			const float hue =
+				accent.hslHueF() < 0 ? 0.0f : accent.hslHueF();
+			const float sat = accent.hslSaturationF();
+			const float light = accent.lightnessF();
+			const QColor secondary = QColor::fromHslF(
+				hue, sat * 0.7f, light + (1.0f - light) * 0.35f);
+			QColor primaryAlpha = primary;
+			primaryAlpha.setAlpha(0x80);
+			QColor secondaryAlpha = secondary;
+			secondaryAlpha.setAlpha(0x65);
+
+			p_primaryColor = primary.name();
+			p_primaryAlphaColor = primaryAlpha.name(QColor::HexArgb);
+			p_secondaryColor = secondary.name();
+			p_secondaryAlphaColor = secondaryAlpha.name(QColor::HexArgb);
+			p_accentColor = accent.name();
+			p_textColor = pal.color(QPalette::WindowText).name();
+			// color-scheme: 0 = no preference, 1 = dark, 2 = light
+			const uint scheme =
+				portalAppearanceSetting("color-scheme").toUInt();
+			if (scheme)
+				p_variant = scheme == 1 ? "dark" : "light";
+		}
+	}
+	primaryColorChanged();
+	primaryAlphaColorChanged();
+	secondaryColorChanged();
+	secondaryAlphaColorChanged();
+	accentColorChanged();
+	textColorChanged();
 	variantChanged();
 }
 
